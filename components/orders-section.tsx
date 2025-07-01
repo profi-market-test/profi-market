@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -12,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Download,
   MoreHorizontal,
@@ -27,6 +29,8 @@ import {
   User,
   CalendarIcon,
   RotateCcw,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { format } from "date-fns"
 
@@ -200,8 +204,22 @@ export function OrdersSection() {
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
   const [cityFilter, setCityFilter] = useState("")
 
-  const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [isLoading, setIsLoading] = useState(false)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Initialize pagination from URL params
+  useEffect(() => {
+    const page = searchParams.get("page")
+    const limit = searchParams.get("limit")
+    if (page) setCurrentPage(Number.parseInt(page))
+    if (limit) setPageSize(Number.parseInt(limit))
+  }, [searchParams])
+
+  const { filteredOrders, paginatedOrders, totalPages, startIndex, endIndex } = useMemo(() => {
+    const filtered = orders.filter((order) => {
       // Search term filter
       const matchesSearch =
         order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -239,7 +257,26 @@ export function OrdersSection() {
         matchesCity
       )
     })
-  }, [searchTerm, dateFrom, dateTo, statusFilter, paymentFilter, selectedCouriers, selectedProducts, cityFilter])
+
+    const total = filtered.length
+    const totalPages = Math.ceil(total / pageSize)
+    const startIndex = (currentPage - 1) * pageSize
+    const endIndex = Math.min(startIndex + pageSize, total)
+    const paginatedOrders = filtered.slice(startIndex, endIndex)
+
+    return { filteredOrders: filtered, paginatedOrders, totalPages, startIndex: startIndex + 1, endIndex }
+  }, [
+    searchTerm,
+    dateFrom,
+    dateTo,
+    statusFilter,
+    paymentFilter,
+    selectedCouriers,
+    selectedProducts,
+    cityFilter,
+    currentPage,
+    pageSize,
+  ])
 
   const resetFilters = () => {
     setDateFrom(undefined)
@@ -250,10 +287,33 @@ export function OrdersSection() {
     setSelectedProducts([])
     setCityFilter("")
     setSearchTerm("")
+    setCurrentPage(1)
   }
 
   const handleExportExcel = () => {
     console.log("Exporting filtered orders to Excel...")
+  }
+
+  const handlePageChange = (page: number) => {
+    setIsLoading(true)
+    setCurrentPage(page)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("page", page.toString())
+    params.set("limit", pageSize.toString())
+    router.push(`?${params.toString()}`)
+
+    // Simulate loading
+    setTimeout(() => setIsLoading(false), 300)
+  }
+
+  const handlePageSizeChange = (newPageSize: string) => {
+    const size = Number.parseInt(newPageSize)
+    setPageSize(size)
+    setCurrentPage(1)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("page", "1")
+    params.set("limit", size.toString())
+    router.push(`?${params.toString()}`)
   }
 
   const totalOrders = filteredOrders.length
@@ -262,7 +322,7 @@ export function OrdersSection() {
   const totalRevenue = filteredOrders.reduce((sum, o) => sum + o.amount, 0)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Orders Management</h1>
@@ -504,7 +564,7 @@ export function OrdersSection() {
             <div>
               <CardTitle className="text-xl font-semibold">Order Management</CardTitle>
               <CardDescription>
-                Showing {filteredOrders.length} of {orders.length} orders
+                Showing {startIndex}–{endIndex} of {totalOrders} orders
               </CardDescription>
             </div>
           </div>
@@ -527,77 +587,166 @@ export function OrdersSection() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredOrders.map((order) => (
-                  <TableRow key={order.id} className="hover:bg-gray-50/50 transition-colors duration-200">
-                    <TableCell className="font-mono font-medium">{order.id}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-gray-400" />
-                        <span className="font-medium">{order.clientName}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        {order.products.map((product, index) => (
-                          <Badge key={index} variant="secondary" className="text-xs mr-1 mb-1">
-                            {product}
-                          </Badge>
+                {isLoading
+                  ? Array.from({ length: pageSize }).map((_, index) => (
+                      <TableRow key={index}>
+                        {Array.from({ length: 10 }).map((_, cellIndex) => (
+                          <TableCell key={cellIndex}>
+                            <Skeleton className="h-4 w-full" />
+                          </TableCell>
                         ))}
-                      </div>
-                    </TableCell>
-                    <TableCell>{getPaymentBadge(order.paymentType)}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="font-mono font-semibold text-green-600">${order.amount.toFixed(2)}</div>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(order.status)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Truck className="h-4 w-4 text-gray-400" />
-                        <span className="text-sm">{order.courierName}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-start gap-2 max-w-[200px]">
-                        <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                        <span className="text-sm leading-relaxed">{order.address}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">
-                          <strong>Created:</strong> {new Date(order.orderCreated).toLocaleString()}
-                        </div>
-                        {order.deliveredTime && (
-                          <div className="text-xs text-green-600">
-                            <strong>Delivered:</strong> {new Date(order.deliveredTime).toLocaleString()}
+                      </TableRow>
+                    ))
+                  : paginatedOrders.map((order) => (
+                      <TableRow key={order.id} className="hover:bg-gray-50/50 transition-colors duration-200">
+                        <TableCell className="font-mono font-medium">{order.id}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-gray-400" />
+                            <span className="font-medium">{order.clientName}</span>
                           </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0 hover:bg-gray-100">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>View Details</DropdownMenuItem>
-                          <DropdownMenuItem>Update Status</DropdownMenuItem>
-                          <DropdownMenuItem>Assign Courier</DropdownMenuItem>
-                          <DropdownMenuItem>Track Order</DropdownMenuItem>
-                          <DropdownMenuItem>Contact Client</DropdownMenuItem>
-                          <DropdownMenuItem className="text-red-600">Cancel Order</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            {order.products.map((product, index) => (
+                              <Badge key={index} variant="secondary" className="text-xs mr-1 mb-1">
+                                {product}
+                              </Badge>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell>{getPaymentBadge(order.paymentType)}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="font-mono font-semibold text-green-600">${order.amount.toFixed(2)}</div>
+                        </TableCell>
+                        <TableCell>{getStatusBadge(order.status)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Truck className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm">{order.courierName}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-start gap-2 max-w-[200px]">
+                            <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                            <span className="text-sm leading-relaxed">{order.address}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="text-xs text-muted-foreground">
+                              <strong>Created:</strong> {new Date(order.orderCreated).toLocaleString()}
+                            </div>
+                            {order.deliveredTime && (
+                              <div className="text-xs text-green-600">
+                                <strong>Delivered:</strong> {new Date(order.deliveredTime).toLocaleString()}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="h-8 w-8 p-0 hover:bg-gray-100">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem>View Details</DropdownMenuItem>
+                              <DropdownMenuItem>Update Status</DropdownMenuItem>
+                              <DropdownMenuItem>Assign Courier</DropdownMenuItem>
+                              <DropdownMenuItem>Track Order</DropdownMenuItem>
+                              <DropdownMenuItem>Contact Client</DropdownMenuItem>
+                              <DropdownMenuItem className="text-red-600">Cancel Order</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
               </TableBody>
             </Table>
           </div>
         </CardContent>
       </Card>
+
+      {/* Sticky Pagination Controls */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <p className="text-sm text-muted-foreground">
+                Showing {startIndex}–{endIndex} of {totalOrders} orders
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center space-x-2">
+                <p className="text-sm font-medium">Rows per page</p>
+                <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
+                  <SelectTrigger className="h-8 w-[70px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent side="top">
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage <= 1}
+                  className="h-8 w-8 p-0"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    let pageNumber
+                    if (totalPages <= 7) {
+                      pageNumber = i + 1
+                    } else if (currentPage <= 4) {
+                      pageNumber = i + 1
+                    } else if (currentPage >= totalPages - 3) {
+                      pageNumber = totalPages - 6 + i
+                    } else {
+                      pageNumber = currentPage - 3 + i
+                    }
+
+                    return (
+                      <Button
+                        key={pageNumber}
+                        variant={currentPage === pageNumber ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handlePageChange(pageNumber)}
+                        className="h-8 w-8 p-0"
+                      >
+                        {pageNumber}
+                      </Button>
+                    )
+                  })}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage >= totalPages}
+                  className="h-8 w-8 p-0"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

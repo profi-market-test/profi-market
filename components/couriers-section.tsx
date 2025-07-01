@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,6 +12,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
+import { Skeleton } from "@/components/ui/skeleton"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import {
   MoreHorizontal,
   Search,
@@ -144,8 +147,21 @@ export function CouriersSection() {
   const [ordersRange, setOrdersRange] = useState([0, 250])
   const [locationFilter, setLocationFilter] = useState("")
 
-  const filteredCouriers = useMemo(() => {
-    return couriers.filter((courier) => {
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [isLoading, setIsLoading] = useState(false)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const page = searchParams.get("page")
+    const limit = searchParams.get("limit")
+    if (page) setCurrentPage(Number.parseInt(page))
+    if (limit) setPageSize(Number.parseInt(limit))
+  }, [searchParams])
+
+  const { filteredCouriers, paginatedCouriers, totalPages, startIndex, endIndex } = useMemo(() => {
+    const filtered = couriers.filter((courier) => {
       // Search term filter
       const matchesSearch =
         courier.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -170,7 +186,15 @@ export function CouriersSection() {
 
       return matchesSearch && matchesStatus && matchesWorkTime && matchesOrders && matchesLocation
     })
-  }, [searchTerm, statusFilter, workTimeFrom, workTimeTo, ordersRange, locationFilter])
+
+    const total = filtered.length
+    const totalPages = Math.ceil(total / pageSize)
+    const startIndex = (currentPage - 1) * pageSize
+    const endIndex = Math.min(startIndex + pageSize, total)
+    const paginatedCouriers = filtered.slice(startIndex, endIndex)
+
+    return { filteredCouriers: filtered, paginatedCouriers, totalPages, startIndex: startIndex + 1, endIndex }
+  }, [searchTerm, statusFilter, workTimeFrom, workTimeTo, ordersRange, locationFilter, currentPage, pageSize])
 
   const resetFilters = () => {
     setStatusFilter("all")
@@ -179,10 +203,32 @@ export function CouriersSection() {
     setOrdersRange([0, 250])
     setLocationFilter("")
     setSearchTerm("")
+    setCurrentPage(1)
   }
 
   const handleExportExcel = () => {
     console.log("Exporting filtered couriers data to Excel...")
+  }
+
+  const handlePageChange = (page: number) => {
+    setIsLoading(true)
+    setCurrentPage(page)
+    const newParams = new URLSearchParams(searchParams)
+    newParams.set("page", String(page))
+    router.push(`?${newParams.toString()}`)
+
+    // Simulate loading
+    setTimeout(() => setIsLoading(false), 300)
+  }
+
+  const handlePageSizeChange = (newPageSize: string) => {
+    const size = Number.parseInt(newPageSize)
+    setPageSize(size)
+    setCurrentPage(1)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("page", "1")
+    params.set("limit", size.toString())
+    router.push(`?${params.toString()}`)
   }
 
   const workingCouriers = filteredCouriers.filter((c) => c.status === "working").length
@@ -190,7 +236,7 @@ export function CouriersSection() {
   const todaysTotalDeliveries = filteredCouriers.reduce((sum, c) => sum + c.todayDelivered, 0)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Couriers Management</h1>
@@ -357,7 +403,7 @@ export function CouriersSection() {
             <div>
               <CardTitle className="text-xl font-semibold">Courier Management</CardTitle>
               <CardDescription>
-                Showing {filteredCouriers.length} of {couriers.length} couriers
+                Showing {startIndex}–{endIndex} of {filteredCouriers.length} couriers
               </CardDescription>
             </div>
           </div>
@@ -383,99 +429,190 @@ export function CouriersSection() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredCouriers.map((courier) => (
-                  <TableRow key={courier.id} className="hover:bg-gray-50/50 transition-colors duration-200">
-                    <TableCell className="font-mono text-sm font-medium">{courier.id}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-3">
-                        <Avatar className="h-10 w-10">
-                          <AvatarImage src={courier.avatar || "/placeholder.svg"} alt={courier.fullName} />
-                          <AvatarFallback className="bg-blue-100 text-blue-600">
-                            {courier.fullName
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <div className="font-medium">{courier.fullName}</div>
-                          <div className="text-sm text-muted-foreground">{courier.email}</div>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(courier.status)}</TableCell>
-                    <TableCell>
-                      <div className="text-sm">{courier.phone}</div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="font-mono font-semibold text-green-600">${courier.accountBalance.toFixed(2)}</div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {courier.workSchedule}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-blue-500" />
-                        <div>
-                          <div className="text-sm font-medium">{courier.currentLocation.address}</div>
-                          {courier.currentLocation.lat !== 0 && (
-                            <div className="text-xs text-muted-foreground font-mono">
-                              {courier.currentLocation.lat.toFixed(4)}, {courier.currentLocation.lng.toFixed(4)}
+                {isLoading
+                  ? Array.from({ length: pageSize }).map((_, index) => (
+                      <TableRow key={index}>
+                        {Array.from({ length: 13 }).map((_, cellIndex) => (
+                          <TableCell key={cellIndex}>
+                            <Skeleton className="h-4 w-full" />
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  : paginatedCouriers.map((courier) => (
+                      <TableRow key={courier.id} className="hover:bg-gray-50/50 transition-colors duration-200">
+                        <TableCell className="font-mono text-sm font-medium">{courier.id}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-3">
+                            <Avatar className="h-10 w-10">
+                              <AvatarImage src={courier.avatar || "/placeholder.svg"} alt={courier.fullName} />
+                              <AvatarFallback className="bg-blue-100 text-blue-600">
+                                {courier.fullName
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <div className="font-medium">{courier.fullName}</div>
+                              <div className="text-sm text-muted-foreground">{courier.email}</div>
                             </div>
-                          )}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="secondary" className="bg-blue-50 text-blue-700">
-                        {courier.todayDelivered}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="secondary" className="bg-green-50 text-green-700">
-                        {courier.weeklyOrders}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="secondary" className="bg-purple-50 text-purple-700">
-                        {courier.monthlyOrders}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                        {courier.handedToClientsToday}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">
-                        {courier.handedToFargoToday}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0 hover:bg-gray-100">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>View Profile</DropdownMenuItem>
-                          <DropdownMenuItem>View Location</DropdownMenuItem>
-                          <DropdownMenuItem>Assign Orders</DropdownMenuItem>
-                          <DropdownMenuItem>Performance Report</DropdownMenuItem>
-                          <DropdownMenuItem>Contact Courier</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                          </div>
+                        </TableCell>
+                        <TableCell>{getStatusBadge(courier.status)}</TableCell>
+                        <TableCell>
+                          <div className="text-sm">{courier.phone}</div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="font-mono font-semibold text-green-600">
+                            ${courier.accountBalance.toFixed(2)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {courier.workSchedule}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-4 w-4 text-blue-500" />
+                            <div>
+                              <div className="text-sm font-medium">{courier.currentLocation.address}</div>
+                              {courier.currentLocation.lat !== 0 && (
+                                <div className="text-xs text-muted-foreground font-mono">
+                                  {courier.currentLocation.lat.toFixed(4)}, {courier.currentLocation.lng.toFixed(4)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="secondary" className="bg-blue-50 text-blue-700">
+                            {courier.todayDelivered}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="secondary" className="bg-green-50 text-green-700">
+                            {courier.weeklyOrders}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="secondary" className="bg-purple-50 text-purple-700">
+                            {courier.monthlyOrders}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                            {courier.handedToClientsToday}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">
+                            {courier.handedToFargoToday}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="h-8 w-8 p-0 hover:bg-gray-100">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem>View Profile</DropdownMenuItem>
+                              <DropdownMenuItem>View Location</DropdownMenuItem>
+                              <DropdownMenuItem>Assign Orders</DropdownMenuItem>
+                              <DropdownMenuItem>Performance Report</DropdownMenuItem>
+                              <DropdownMenuItem>Contact Courier</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
               </TableBody>
             </Table>
           </div>
         </CardContent>
       </Card>
+
+      {/* Sticky Pagination Controls */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <p className="text-sm text-muted-foreground">
+                Showing {startIndex}–{endIndex} of {filteredCouriers.length} couriers
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center space-x-2">
+                <p className="text-sm font-medium">Rows per page</p>
+                <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
+                  <SelectTrigger className="h-8 w-[70px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent side="top">
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage <= 1}
+                  className="h-8 w-8 p-0"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    let pageNumber
+                    if (totalPages <= 7) {
+                      pageNumber = i + 1
+                    } else if (currentPage <= 4) {
+                      pageNumber = i + 1
+                    } else if (currentPage >= totalPages - 3) {
+                      pageNumber = totalPages - 6 + i
+                    } else {
+                      pageNumber = currentPage - 3 + i
+                    }
+
+                    return (
+                      <Button
+                        key={pageNumber}
+                        variant={currentPage === pageNumber ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handlePageChange(pageNumber)}
+                        className="h-8 w-8 p-0"
+                      >
+                        {pageNumber}
+                      </Button>
+                    )
+                  })}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage >= totalPages}
+                  className="h-8 w-8 p-0"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

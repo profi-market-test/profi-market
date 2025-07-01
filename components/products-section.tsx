@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Plus, Search, Download, Edit, Trash2, Package, Store, Filter, RotateCcw } from "lucide-react"
+import {
+  Plus,
+  Search,
+  Download,
+  Edit,
+  Trash2,
+  Package,
+  Store,
+  Filter,
+  RotateCcw,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Skeleton } from "@/components/ui/skeleton"
 
 const products = [
   {
@@ -153,8 +167,21 @@ export function ProductsSection() {
   const [monthlyMin, setMonthlyMin] = useState("")
   const [monthlyMax, setMonthlyMax] = useState("")
 
-  const filteredProducts = useMemo(() => {
-    return products.filter((product) => {
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [isLoading, setIsLoading] = useState(false)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const page = searchParams.get("page")
+    const limit = searchParams.get("limit")
+    if (page) setCurrentPage(Number.parseInt(page))
+    if (limit) setPageSize(Number.parseInt(limit))
+  }, [searchParams])
+
+  const { filteredProducts, paginatedProducts, totalPages, startIndex, endIndex } = useMemo(() => {
+    const filtered = products.filter((product) => {
       // Search term filter
       const matchesSearch =
         product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -192,6 +219,14 @@ export function ProductsSection() {
         matchesMonthly
       )
     })
+
+    const total = filtered.length
+    const totalPages = Math.ceil(total / pageSize)
+    const startIndex = (currentPage - 1) * pageSize
+    const endIndex = Math.min(startIndex + pageSize, total)
+    const paginatedProducts = filtered.slice(startIndex, endIndex)
+
+    return { filteredProducts: filtered, paginatedProducts, totalPages, startIndex: startIndex + 1, endIndex }
   }, [
     searchTerm,
     categoryFilter,
@@ -202,6 +237,8 @@ export function ProductsSection() {
     weeklyMax,
     monthlyMin,
     monthlyMax,
+    currentPage,
+    pageSize,
   ])
 
   const resetFilters = () => {
@@ -214,6 +251,7 @@ export function ProductsSection() {
     setMonthlyMin("")
     setMonthlyMax("")
     setSearchTerm("")
+    setCurrentPage(1)
   }
 
   const handleExportExcel = () => {
@@ -226,8 +264,29 @@ export function ProductsSection() {
     return { profit: profit.toFixed(2), margin }
   }
 
+  const handlePageChange = (page: number) => {
+    setIsLoading(true)
+    setCurrentPage(page)
+    const params = new URLSearchParams(searchParams)
+    params.set("page", String(page))
+    router.push(`?${params.toString()}`)
+
+    // Simulate loading
+    setTimeout(() => setIsLoading(false), 300)
+  }
+
+  const handlePageSizeChange = (size: string) => {
+    const newSize = Number.parseInt(size)
+    setPageSize(newSize)
+    setCurrentPage(1)
+    const params = new URLSearchParams(searchParams)
+    params.set("limit", String(newSize))
+    params.set("page", "1")
+    router.push(`?${params.toString()}`)
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Products Management</h1>
@@ -449,7 +508,7 @@ export function ProductsSection() {
             <div>
               <CardTitle className="text-xl font-semibold">Product Catalog</CardTitle>
               <CardDescription>
-                Showing {filteredProducts.length} of {products.length} products
+                Showing {startIndex}–{endIndex} of {filteredProducts.length} products
               </CardDescription>
             </div>
           </div>
@@ -473,92 +532,219 @@ export function ProductsSection() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredProducts.map((product) => {
-                  const { profit, margin } = calculateProfit(product.sellingPrice, product.costPrice)
-                  return (
-                    <TableRow key={product.id} className="hover:bg-gray-50/50 transition-colors duration-200">
-                      <TableCell className="font-mono text-sm font-medium">{product.id}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div>
-                            <div className="font-medium">{product.name}</div>
-                            {product.isCombo && (
-                              <Badge variant="secondary" className="text-xs mt-1">
-                                Combo Package
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-center">{getStockBadge(product.status, product.stock)}</TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                          {product.weeklySold}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                          {product.monthlySold}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {product.isCombo ? (
-                          <div className="space-y-1">
-                            {product.comboItems.slice(0, 2).map((item, index) => (
-                              <div key={index} className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-700">
-                                {item}
+                {isLoading
+                  ? Array.from({ length: pageSize }).map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell>
+                          <Skeleton className="h-4 w-[100px]" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-[150px]" />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Skeleton className="h-4 w-[80px]" />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Skeleton className="h-4 w-[60px]" />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Skeleton className="h-4 w-[60px]" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-[120px]" />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Skeleton className="h-4 w-[50px]" />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Skeleton className="h-4 w-[50px]" />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Skeleton className="h-4 w-[60px]" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-[100px]" />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Skeleton className="h-4 w-[80px]" />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  : paginatedProducts.map((product) => {
+                      const { profit, margin } = calculateProfit(product.sellingPrice, product.costPrice)
+                      return (
+                        <TableRow key={product.id} className="hover:bg-gray-50/50 transition-colors duration-200">
+                          <TableCell className="font-mono text-sm font-medium">{product.id}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div>
+                                <div className="font-medium">{product.name}</div>
+                                {product.isCombo && (
+                                  <Badge variant="secondary" className="text-xs mt-1">
+                                    Combo Package
+                                  </Badge>
+                                )}
                               </div>
-                            ))}
-                            {product.comboItems.length > 2 && (
-                              <div className="text-xs text-muted-foreground">+{product.comboItems.length - 2} more</div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center">{getStockBadge(product.status, product.stock)}</TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                              {product.weeklySold}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                              {product.monthlySold}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {product.isCombo ? (
+                              <div className="space-y-1">
+                                {product.comboItems.slice(0, 2).map((item, index) => (
+                                  <div key={index} className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-700">
+                                    {item}
+                                  </div>
+                                ))}
+                                {product.comboItems.length > 2 && (
+                                  <div className="text-xs text-muted-foreground">
+                                    +{product.comboItems.length - 2} more
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-sm">Single item</span>
                             )}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">Single item</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">${product.costPrice.toFixed(2)}</TableCell>
-                      <TableCell className="text-right font-mono font-medium">
-                        ${product.sellingPrice.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="text-right">
-                          <div className="font-mono font-medium text-green-600">${profit}</div>
-                          <div className="text-xs text-muted-foreground">{margin}% margin</div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {product.stores.slice(0, 2).map((store, index) => (
-                            <Badge key={index} variant="outline" className="text-xs">
-                              {store}
-                            </Badge>
-                          ))}
-                          {product.stores.length > 2 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{product.stores.length - 2}
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-blue-100 hover:text-blue-600">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-red-100 hover:text-red-600">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">${product.costPrice.toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-mono font-medium">
+                            ${product.sellingPrice.toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="text-right">
+                              <div className="font-mono font-medium text-green-600">${profit}</div>
+                              <div className="text-xs text-muted-foreground">{margin}% margin</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {product.stores.slice(0, 2).map((store, index) => (
+                                <Badge key={index} variant="outline" className="text-xs">
+                                  {store}
+                                </Badge>
+                              ))}
+                              {product.stores.length > 2 && (
+                                <Badge variant="outline" className="text-xs">
+                                  +{product.stores.length - 2}
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 hover:bg-blue-100 hover:text-blue-600"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 hover:bg-red-100 hover:text-red-600"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
               </TableBody>
             </Table>
           </div>
         </CardContent>
       </Card>
+
+      {/* Sticky Pagination Controls */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <p className="text-sm text-muted-foreground">
+                Showing {startIndex}–{endIndex} of {filteredProducts.length} products
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center space-x-2">
+                <p className="text-sm font-medium">Rows per page</p>
+                <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
+                  <SelectTrigger className="h-8 w-[70px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent side="top">
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage <= 1}
+                  className="h-8 w-8 p-0"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    let pageNumber
+                    if (totalPages <= 7) {
+                      pageNumber = i + 1
+                    } else if (currentPage <= 4) {
+                      pageNumber = i + 1
+                    } else if (currentPage >= totalPages - 3) {
+                      pageNumber = totalPages - 6 + i
+                    } else {
+                      pageNumber = currentPage - 3 + i
+                    }
+
+                    return (
+                      <Button
+                        key={pageNumber}
+                        variant={currentPage === pageNumber ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handlePageChange(pageNumber)}
+                        className="h-8 w-8 p-0"
+                      >
+                        {pageNumber}
+                      </Button>
+                    )
+                  })}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage >= totalPages}
+                  className="h-8 w-8 p-0"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

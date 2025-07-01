@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Slider } from "@/components/ui/slider"
+import { useRouter, useSearchParams } from "next/navigation"
+import { ChevronLeft, ChevronRight } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   MoreHorizontal,
   Search,
@@ -19,7 +23,6 @@ import {
   Package,
   Download,
   AlertTriangle,
-  TrendingUp,
   Filter,
   RotateCcw,
 } from "lucide-react"
@@ -129,8 +132,21 @@ export function SellersSection() {
   const [cityFilter, setCityFilter] = useState("")
   const [nameFilter, setNameFilter] = useState("")
 
-  const filteredSellers = useMemo(() => {
-    return sellers.filter((seller) => {
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [isLoading, setIsLoading] = useState(false)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const page = searchParams.get("page")
+    const limit = searchParams.get("limit")
+    if (page) setCurrentPage(Number.parseInt(page))
+    if (limit) setPageSize(Number.parseInt(limit))
+  }, [searchParams])
+
+  const { filteredSellers, paginatedSellers, totalPages, startIndex, endIndex } = useMemo(() => {
+    const filtered = sellers.filter((seller) => {
       // Search term filter
       const matchesSearch =
         seller.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -155,7 +171,15 @@ export function SellersSection() {
 
       return matchesSearch && matchesDebt && matchesProducts && matchesCity && matchesName
     })
-  }, [searchTerm, debtRange, productsRange, cityFilter, nameFilter])
+
+    const total = filtered.length
+    const totalPages = Math.ceil(total / pageSize)
+    const startIndex = (currentPage - 1) * pageSize
+    const endIndex = Math.min(startIndex + pageSize, total)
+    const paginatedSellers = filtered.slice(startIndex, endIndex)
+
+    return { filteredSellers: filtered, paginatedSellers, totalPages, startIndex: startIndex + 1, endIndex }
+  }, [searchTerm, debtRange, productsRange, cityFilter, nameFilter, currentPage, pageSize])
 
   const resetFilters = () => {
     setDebtRange([0, 6000])
@@ -163,27 +187,45 @@ export function SellersSection() {
     setCityFilter("")
     setNameFilter("")
     setSearchTerm("")
+    setCurrentPage(1)
   }
 
   const handleExportExcel = () => {
     console.log("Exporting filtered sellers data to Excel...")
   }
 
-  const totalDebt = filteredSellers.reduce((sum, seller) => sum + seller.debt, 0)
-  const averageProducts =
-    filteredSellers.length > 0
-      ? filteredSellers.reduce((sum, seller) => sum + seller.totalProductsReceived, 0) / filteredSellers.length
-      : 0
+  const handlePageChange = (page: number) => {
+    setIsLoading(true)
+    setCurrentPage(page)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("page", page.toString())
+    params.set("limit", pageSize.toString())
+    router.push(`?${params.toString()}`)
+
+    // Simulate loading
+    setTimeout(() => setIsLoading(false), 300)
+  }
+
+  const handlePageSizeChange = (newPageSize: string) => {
+    const size = Number.parseInt(newPageSize)
+    setPageSize(size)
+    setCurrentPage(1)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("page", "1")
+    params.set("limit", size.toString())
+    router.push(`?${params.toString()}`)
+  }
+
+  const totalDebt = filteredSellers.reduce((sum, s) => sum + s.debt, 0)
   const overdueSellers = filteredSellers.filter((s) => s.status === "overdue").length
+  const totalProducts = filteredSellers.reduce((sum, s) => sum + s.totalProductsReceived, 0)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Sellers Management</h1>
-          <p className="text-muted-foreground">
-            Manage product suppliers, track debts, and monitor supply relationships
-          </p>
+          <p className="text-muted-foreground">Manage seller relationships, debts, and product distribution</p>
         </div>
       </div>
 
@@ -200,7 +242,7 @@ export function SellersSection() {
             {/* Debt Range */}
             <div className="space-y-2">
               <Label>
-                Debt Amount: ${debtRange[0]} - ${debtRange[1]}
+                Debt Range: ${debtRange[0]} - ${debtRange[1]}
               </Label>
               <Slider value={debtRange} onValueChange={setDebtRange} max={6000} min={0} step={100} className="w-full" />
             </div>
@@ -208,7 +250,7 @@ export function SellersSection() {
             {/* Products Range */}
             <div className="space-y-2">
               <Label>
-                Products Sold: {productsRange[0]} - {productsRange[1]}
+                Products Received: {productsRange[0]} - {productsRange[1]}
               </Label>
               <Slider
                 value={productsRange}
@@ -226,14 +268,10 @@ export function SellersSection() {
               <Input placeholder="Enter city name" value={cityFilter} onChange={(e) => setCityFilter(e.target.value)} />
             </div>
 
-            {/* Seller Name Filter */}
+            {/* Name Filter */}
             <div className="space-y-2">
-              <Label>Seller Name</Label>
-              <Input
-                placeholder="Enter seller name"
-                value={nameFilter}
-                onChange={(e) => setNameFilter(e.target.value)}
-              />
+              <Label>Company/Contact Name</Label>
+              <Input placeholder="Enter name" value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} />
             </div>
           </div>
 
@@ -289,44 +327,39 @@ export function SellersSection() {
 
         <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-red-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Debt</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Outstanding Debt</CardTitle>
             <DollarSign className="h-5 w-5 text-red-600" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-red-600">${totalDebt.toFixed(2)}</div>
-            <div className="flex items-center mt-1">
-              <AlertTriangle className="h-3 w-3 text-red-500 mr-1" />
-              <p className="text-xs text-red-600">{overdueSellers} overdue accounts</p>
-            </div>
+            <p className="text-xs text-muted-foreground mt-1">Needs collection</p>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-orange-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Overdue Accounts</CardTitle>
+            <AlertTriangle className="h-5 w-5 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-orange-600">{overdueSellers}</div>
+            <p className="text-xs text-muted-foreground mt-1">Require immediate attention</p>
           </CardContent>
         </Card>
 
         <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-green-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Products</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Products Distributed</CardTitle>
             <Package className="h-5 w-5 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-green-600">{Math.round(averageProducts)}</div>
-            <p className="text-xs text-muted-foreground mt-1">Per seller</p>
-          </CardContent>
-        </Card>
-
-        <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-purple-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active Suppliers</CardTitle>
-            <TrendingUp className="h-5 w-5 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-purple-600">
-              {filteredSellers.filter((s) => s.status === "active").length}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Currently supplying</p>
+            <div className="text-3xl font-bold text-green-600">{totalProducts.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground mt-1">Units distributed</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Debt Alert Card */}
+      {/* Overdue Alert */}
       {overdueSellers > 0 && (
         <Card className="border-l-4 border-l-red-500 bg-red-50/30">
           <CardHeader>
@@ -338,11 +371,11 @@ export function SellersSection() {
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-2xl font-bold text-red-600">{overdueSellers} Sellers</div>
-                <p className="text-sm text-red-600 mt-1">Have overdue payments requiring immediate attention</p>
+                <div className="text-2xl font-bold text-red-600">{overdueSellers} Sellers Overdue</div>
+                <p className="text-sm text-red-600 mt-1">Immediate collection action required</p>
               </div>
               <Button variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 bg-transparent">
-                Review Overdue
+                View Overdue
               </Button>
             </div>
           </CardContent>
@@ -354,9 +387,9 @@ export function SellersSection() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-xl font-semibold">Sellers Management</CardTitle>
+              <CardTitle className="text-xl font-semibold">Seller Management</CardTitle>
               <CardDescription>
-                Showing {filteredSellers.length} of {sellers.length} sellers
+                Showing {startIndex}–{endIndex} of {filteredSellers.length} sellers
               </CardDescription>
             </div>
           </div>
@@ -367,92 +400,176 @@ export function SellersSection() {
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="font-semibold">ID</TableHead>
-                  <TableHead className="font-semibold">Seller</TableHead>
-                  <TableHead className="font-semibold">Contact</TableHead>
+                  <TableHead className="font-semibold">Company</TableHead>
+                  <TableHead className="font-semibold">Contact Person</TableHead>
+                  <TableHead className="font-semibold">Phone</TableHead>
                   <TableHead className="font-semibold">Address</TableHead>
-                  <TableHead className="font-semibold text-right">Debt</TableHead>
+                  <TableHead className="font-semibold text-right">Outstanding Debt</TableHead>
                   <TableHead className="font-semibold text-center">Products Received</TableHead>
-                  <TableHead className="font-semibold">Status</TableHead>
+                  <TableHead className="font-semibold">Last Activity</TableHead>
                   <TableHead className="font-semibold text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredSellers.map((seller) => (
-                  <TableRow key={seller.id} className="hover:bg-gray-50/50 transition-colors duration-200">
-                    <TableCell className="font-mono text-sm font-medium">{seller.id}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-3">
-                        <Avatar className="h-10 w-10">
-                          <AvatarImage src={seller.avatar || "/placeholder.svg"} alt={seller.fullName} />
-                          <AvatarFallback className="bg-blue-100 text-blue-600">
-                            {seller.fullName
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")
-                              .slice(0, 2)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <div className="font-medium">{seller.fullName}</div>
-                          <div className="text-sm text-muted-foreground">{seller.contactPerson}</div>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm">{seller.phone}</div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="bg-gray-50">
-                        {seller.address}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div>
-                        <div
-                          className={`font-mono font-semibold ${seller.debt > 0 ? "text-red-600" : "text-green-600"}`}
-                        >
-                          ${seller.debt.toFixed(2)}
-                        </div>
-                        <div className="mt-1">{getDebtBadge(seller.debt, seller.status)}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="secondary" className="bg-blue-50 text-blue-700 font-mono">
-                        {seller.totalProductsReceived.toLocaleString()}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <div className="text-sm">Last Activity:</div>
-                        <div className="text-xs text-muted-foreground">{seller.lastActivity}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0 hover:bg-gray-100">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>View Profile</DropdownMenuItem>
-                          <DropdownMenuItem>Payment History</DropdownMenuItem>
-                          <DropdownMenuItem>Product Orders</DropdownMenuItem>
-                          <DropdownMenuItem>Contact Seller</DropdownMenuItem>
-                          <DropdownMenuItem>Edit Details</DropdownMenuItem>
-                          {seller.debt > 0 && (
-                            <DropdownMenuItem className="text-red-600">Send Payment Reminder</DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {isLoading
+                  ? Array.from({ length: pageSize }).map((_, index) => (
+                      <TableRow key={index}>
+                        {Array.from({ length: 9 }).map((_, cellIndex) => (
+                          <TableCell key={cellIndex}>
+                            <Skeleton className="h-4 w-full" />
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  : paginatedSellers.map((seller) => (
+                      <TableRow key={seller.id} className="hover:bg-gray-50/50 transition-colors duration-200">
+                        <TableCell className="font-mono text-sm font-medium">{seller.id}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-3">
+                            <Avatar className="h-10 w-10">
+                              <AvatarImage src={seller.avatar || "/placeholder.svg"} alt={seller.fullName} />
+                              <AvatarFallback className="bg-purple-100 text-purple-600">
+                                {seller.fullName
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")
+                                  .slice(0, 2)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <div className="font-medium">{seller.fullName}</div>
+                              <div className="text-sm text-muted-foreground">Company</div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{seller.contactPerson}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">{seller.phone}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {seller.address}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex flex-col items-end gap-1">
+                            <div className="font-mono font-semibold text-red-600">${seller.debt.toFixed(2)}</div>
+                            {getDebtBadge(seller.debt, seller.status)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="secondary" className="bg-green-50 text-green-700">
+                            {seller.totalProductsReceived.toLocaleString()}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">{new Date(seller.lastActivity).toLocaleDateString()}</div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="h-8 w-8 p-0 hover:bg-gray-100">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem>View Profile</DropdownMenuItem>
+                              <DropdownMenuItem>Payment History</DropdownMenuItem>
+                              <DropdownMenuItem>Product History</DropdownMenuItem>
+                              <DropdownMenuItem>Send Invoice</DropdownMenuItem>
+                              <DropdownMenuItem>Contact Seller</DropdownMenuItem>
+                              <DropdownMenuItem className="text-red-600">Suspend Account</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
               </TableBody>
             </Table>
           </div>
         </CardContent>
       </Card>
+
+      {/* Sticky Pagination Controls */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <p className="text-sm text-muted-foreground">
+                Showing {startIndex}–{endIndex} of {filteredSellers.length} sellers
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center space-x-2">
+                <p className="text-sm font-medium">Rows per page</p>
+                <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
+                  <SelectTrigger className="h-8 w-[70px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent side="top">
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage <= 1}
+                  className="h-8 w-8 p-0"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    let pageNumber
+                    if (totalPages <= 7) {
+                      pageNumber = i + 1
+                    } else if (currentPage <= 4) {
+                      pageNumber = i + 1
+                    } else if (currentPage >= totalPages - 3) {
+                      pageNumber = totalPages - 6 + i
+                    } else {
+                      pageNumber = currentPage - 3 + i
+                    }
+
+                    return (
+                      <Button
+                        key={pageNumber}
+                        variant={currentPage === pageNumber ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handlePageChange(pageNumber)}
+                        className="h-8 w-8 p-0"
+                      >
+                        {pageNumber}
+                      </Button>
+                    )
+                  })}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage >= totalPages}
+                  className="h-8 w-8 p-0"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,6 +14,7 @@ import { Slider } from "@/components/ui/slider"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Download,
   MoreHorizontal,
@@ -25,6 +27,8 @@ import {
   Filter,
   RotateCcw,
   CalendarIcon,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { format } from "date-fns"
 
@@ -165,8 +169,21 @@ export function FargoSection() {
   const [amountRange, setAmountRange] = useState([0, 100])
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
 
-  const filteredOrders = useMemo(() => {
-    return fargoOrders.filter((order) => {
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [isLoading, setIsLoading] = useState(false)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const page = searchParams.get("page")
+    const limit = searchParams.get("limit")
+    if (page) setCurrentPage(Number.parseInt(page))
+    if (limit) setPageSize(Number.parseInt(limit))
+  }, [searchParams])
+
+  const { filteredOrders, paginatedOrders, totalPages, startIndex, endIndex } = useMemo(() => {
+    const filtered = fargoOrders.filter((order) => {
       // Search term filter
       const matchesSearch =
         order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -192,7 +209,15 @@ export function FargoSection() {
 
       return matchesSearch && matchesStatus && matchesCustomer && matchesDateRange && matchesAmount && matchesProduct
     })
-  }, [searchTerm, statusFilter, customerFilter, dateFrom, dateTo, amountRange, selectedProducts])
+
+    const total = filtered.length
+    const totalPages = Math.ceil(total / pageSize)
+    const startIndex = (currentPage - 1) * pageSize
+    const endIndex = Math.min(startIndex + pageSize, total)
+    const paginatedOrders = filtered.slice(startIndex, endIndex)
+
+    return { filteredOrders: filtered, paginatedOrders, totalPages, startIndex: startIndex + 1, endIndex }
+  }, [searchTerm, statusFilter, customerFilter, dateFrom, dateTo, amountRange, selectedProducts, currentPage, pageSize])
 
   const resetFilters = () => {
     setStatusFilter("all")
@@ -202,10 +227,33 @@ export function FargoSection() {
     setAmountRange([0, 100])
     setSelectedProducts([])
     setSearchTerm("")
+    setCurrentPage(1)
   }
 
   const handleExportExcel = () => {
     console.log("Exporting filtered Fargo orders to Excel...")
+  }
+
+  const handlePageChange = (page: number) => {
+    setIsLoading(true)
+    setCurrentPage(page)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("page", page.toString())
+    params.set("limit", pageSize.toString())
+    router.push(`?${params.toString()}`)
+
+    // Simulate loading
+    setTimeout(() => setIsLoading(false), 300)
+  }
+
+  const handlePageSizeChange = (newPageSize: string) => {
+    const size = Number.parseInt(newPageSize)
+    setPageSize(size)
+    setCurrentPage(1)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("page", "1")
+    params.set("limit", size.toString())
+    router.push(`?${params.toString()}`)
   }
 
   const todaysOrders = filteredOrders.filter((order) => order.orderDate === "2024-01-15")
@@ -213,7 +261,7 @@ export function FargoSection() {
   const returnedOrders = filteredOrders.filter((order) => order.status === "returned").length
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Fargo Delivery Management</h1>
@@ -451,7 +499,7 @@ export function FargoSection() {
             <div>
               <CardTitle className="text-xl font-semibold">Fargo Orders Management</CardTitle>
               <CardDescription>
-                Showing {filteredOrders.length} of {fargoOrders.length} orders
+                Showing {startIndex}–{endIndex} of {filteredOrders.length} orders
               </CardDescription>
             </div>
           </div>
@@ -471,61 +519,152 @@ export function FargoSection() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredOrders.map((order) => (
-                  <TableRow key={order.id} className="hover:bg-gray-50/50 transition-colors duration-200">
-                    <TableCell>
-                      <div>
-                        <div className="font-mono font-medium">{order.id}</div>
-                        <div className="text-xs text-muted-foreground">{order.trackingId}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{order.clientName}</div>
-                        <div className="text-sm text-muted-foreground">{order.clientPhone}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="font-mono font-semibold text-green-600">${order.paymentAmount.toFixed(2)}</div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        {order.products.map((product, index) => (
-                          <Badge key={index} variant="secondary" className="text-xs mr-1">
-                            {product}
-                          </Badge>
+                {isLoading
+                  ? Array.from({ length: pageSize }).map((_, index) => (
+                      <TableRow key={index}>
+                        {Array.from({ length: 7 }).map((_, cellIndex) => (
+                          <TableCell key={cellIndex}>
+                            <Skeleton className="h-4 w-full" />
+                          </TableCell>
                         ))}
-                      </div>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(order.status)}</TableCell>
-                    <TableCell>
-                      <div className="max-w-[200px]">
-                        <p className="text-sm text-gray-700 leading-relaxed">{order.comments}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0 hover:bg-gray-100">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>View Details</DropdownMenuItem>
-                          <DropdownMenuItem>Track with Fargo</DropdownMenuItem>
-                          <DropdownMenuItem>Update Status</DropdownMenuItem>
-                          <DropdownMenuItem>Contact Client</DropdownMenuItem>
-                          <DropdownMenuItem className="text-red-600">Cancel Order</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableRow>
+                    ))
+                  : paginatedOrders.map((order) => (
+                      <TableRow key={order.id} className="hover:bg-gray-50/50 transition-colors duration-200">
+                        <TableCell>
+                          <div>
+                            <div className="font-mono font-medium">{order.id}</div>
+                            <div className="text-xs text-muted-foreground">{order.trackingId}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{order.clientName}</div>
+                            <div className="text-sm text-muted-foreground">{order.clientPhone}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="font-mono font-semibold text-green-600">
+                            ${order.paymentAmount.toFixed(2)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            {order.products.map((product, index) => (
+                              <Badge key={index} variant="secondary" className="text-xs mr-1">
+                                {product}
+                              </Badge>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell>{getStatusBadge(order.status)}</TableCell>
+                        <TableCell>
+                          <div className="max-w-[200px]">
+                            <p className="text-sm text-gray-700 leading-relaxed">{order.comments}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="h-8 w-8 p-0 hover:bg-gray-100">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem>View Details</DropdownMenuItem>
+                              <DropdownMenuItem>Track with Fargo</DropdownMenuItem>
+                              <DropdownMenuItem>Update Status</DropdownMenuItem>
+                              <DropdownMenuItem>Contact Client</DropdownMenuItem>
+                              <DropdownMenuItem className="text-red-600">Cancel Order</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
               </TableBody>
             </Table>
           </div>
         </CardContent>
       </Card>
+
+      {/* Sticky Pagination Controls */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <p className="text-sm text-muted-foreground">
+                Showing {startIndex}–{endIndex} of {filteredOrders.length} orders
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center space-x-2">
+                <p className="text-sm font-medium">Rows per page</p>
+                <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
+                  <SelectTrigger className="h-8 w-[70px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent side="top">
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage <= 1}
+                  className="h-8 w-8 p-0"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    let pageNumber
+                    if (totalPages <= 7) {
+                      pageNumber = i + 1
+                    } else if (currentPage <= 4) {
+                      pageNumber = i + 1
+                    } else if (currentPage >= totalPages - 3) {
+                      pageNumber = totalPages - 6 + i
+                    } else {
+                      pageNumber = currentPage - 3 + i
+                    }
+
+                    return (
+                      <Button
+                        key={pageNumber}
+                        variant={currentPage === pageNumber ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handlePageChange(pageNumber)}
+                        className="h-8 w-8 p-0"
+                      >
+                        {pageNumber}
+                      </Button>
+                    )
+                  })}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage >= totalPages}
+                  className="h-8 w-8 p-0"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
