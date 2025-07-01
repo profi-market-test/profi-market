@@ -1,13 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Slider } from "@/components/ui/slider"
 import {
   MoreHorizontal,
   Search,
@@ -18,6 +20,8 @@ import {
   Download,
   AlertTriangle,
   TrendingUp,
+  Filter,
+  RotateCcw,
 } from "lucide-react"
 
 const sellers = [
@@ -119,20 +123,58 @@ const getDebtBadge = (debt: number, status: string) => {
 export function SellersSection() {
   const [searchTerm, setSearchTerm] = useState("")
 
-  const filteredSellers = sellers.filter(
-    (seller) =>
-      seller.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      seller.contactPerson.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      seller.address.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  // Filter states
+  const [debtRange, setDebtRange] = useState([0, 6000])
+  const [productsRange, setProductsRange] = useState([0, 2500])
+  const [cityFilter, setCityFilter] = useState("")
+  const [nameFilter, setNameFilter] = useState("")
 
-  const totalDebt = sellers.reduce((sum, seller) => sum + seller.debt, 0)
-  const averageProducts = sellers.reduce((sum, seller) => sum + seller.totalProductsReceived, 0) / sellers.length
-  const overdueSellers = sellers.filter((s) => s.status === "overdue").length
+  const filteredSellers = useMemo(() => {
+    return sellers.filter((seller) => {
+      // Search term filter
+      const matchesSearch =
+        seller.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        seller.contactPerson.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        seller.address.toLowerCase().includes(searchTerm.toLowerCase())
+
+      // Debt range filter
+      const matchesDebt = seller.debt >= debtRange[0] && seller.debt <= debtRange[1]
+
+      // Products range filter
+      const matchesProducts =
+        seller.totalProductsReceived >= productsRange[0] && seller.totalProductsReceived <= productsRange[1]
+
+      // City filter
+      const matchesCity = !cityFilter || seller.address.toLowerCase().includes(cityFilter.toLowerCase())
+
+      // Name filter
+      const matchesName =
+        !nameFilter ||
+        seller.fullName.toLowerCase().includes(nameFilter.toLowerCase()) ||
+        seller.contactPerson.toLowerCase().includes(nameFilter.toLowerCase())
+
+      return matchesSearch && matchesDebt && matchesProducts && matchesCity && matchesName
+    })
+  }, [searchTerm, debtRange, productsRange, cityFilter, nameFilter])
+
+  const resetFilters = () => {
+    setDebtRange([0, 6000])
+    setProductsRange([0, 2500])
+    setCityFilter("")
+    setNameFilter("")
+    setSearchTerm("")
+  }
 
   const handleExportExcel = () => {
-    console.log("Exporting sellers data to Excel...")
+    console.log("Exporting filtered sellers data to Excel...")
   }
+
+  const totalDebt = filteredSellers.reduce((sum, seller) => sum + seller.debt, 0)
+  const averageProducts =
+    filteredSellers.length > 0
+      ? filteredSellers.reduce((sum, seller) => sum + seller.totalProductsReceived, 0) / filteredSellers.length
+      : 0
+  const overdueSellers = filteredSellers.filter((s) => s.status === "overdue").length
 
   return (
     <div className="space-y-6">
@@ -143,28 +185,105 @@ export function SellersSection() {
             Manage product suppliers, track debts, and monitor supply relationships
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button onClick={handleExportExcel} variant="outline" className="gap-2 hover:bg-accent bg-transparent">
-            <Download className="h-4 w-4" />
-            Export Excel
-          </Button>
-          <Button className="gap-2 bg-blue-600 hover:bg-blue-700">
-            <Plus className="h-4 w-4" />
-            Add Seller
-          </Button>
-        </div>
       </div>
+
+      {/* Filter Panel */}
+      <Card className="border-l-4 border-l-purple-500">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Seller Filters
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            {/* Debt Range */}
+            <div className="space-y-2">
+              <Label>
+                Debt Amount: ${debtRange[0]} - ${debtRange[1]}
+              </Label>
+              <Slider value={debtRange} onValueChange={setDebtRange} max={6000} min={0} step={100} className="w-full" />
+            </div>
+
+            {/* Products Range */}
+            <div className="space-y-2">
+              <Label>
+                Products Sold: {productsRange[0]} - {productsRange[1]}
+              </Label>
+              <Slider
+                value={productsRange}
+                onValueChange={setProductsRange}
+                max={2500}
+                min={0}
+                step={50}
+                className="w-full"
+              />
+            </div>
+
+            {/* City Filter */}
+            <div className="space-y-2">
+              <Label>City</Label>
+              <Input placeholder="Enter city name" value={cityFilter} onChange={(e) => setCityFilter(e.target.value)} />
+            </div>
+
+            {/* Seller Name Filter */}
+            <div className="space-y-2">
+              <Label>Seller Name</Label>
+              <Input
+                placeholder="Enter seller name"
+                value={nameFilter}
+                onChange={(e) => setNameFilter(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              <Button onClick={resetFilters} variant="outline" className="gap-2 bg-transparent">
+                <RotateCcw className="h-4 w-4" />
+                Reset
+              </Button>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button onClick={handleExportExcel} variant="outline" className="gap-2 hover:bg-accent bg-transparent">
+                <Download className="h-4 w-4" />
+                Export Excel
+              </Button>
+              <Button className="gap-2 bg-blue-600 hover:bg-blue-700">
+                <Plus className="h-4 w-4" />
+                Add Seller
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Search Bar */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search sellers..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-8 focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Summary Cards */}
       <div className="grid gap-6 md:grid-cols-4">
         <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Sellers</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Filtered Sellers</CardTitle>
             <Users className="h-5 w-5 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-blue-600">{sellers.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">Active suppliers</p>
+            <div className="text-3xl font-bold text-blue-600">{filteredSellers.length}</div>
+            <p className="text-xs text-muted-foreground mt-1">Matching filters</p>
           </CardContent>
         </Card>
 
@@ -200,7 +319,7 @@ export function SellersSection() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-purple-600">
-              {sellers.filter((s) => s.status === "active").length}
+              {filteredSellers.filter((s) => s.status === "active").length}
             </div>
             <p className="text-xs text-muted-foreground mt-1">Currently supplying</p>
           </CardContent>
@@ -236,16 +355,9 @@ export function SellersSection() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-xl font-semibold">Sellers Management</CardTitle>
-              <CardDescription>Track supplier relationships, debts, and product deliveries</CardDescription>
-            </div>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search sellers..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-8 w-[300px] focus:ring-2 focus:ring-blue-500/20"
-              />
+              <CardDescription>
+                Showing {filteredSellers.length} of {sellers.length} sellers
+              </CardDescription>
             </div>
           </div>
         </CardHeader>

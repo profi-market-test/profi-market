@@ -1,13 +1,16 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Slider } from "@/components/ui/slider"
 import {
   MoreHorizontal,
   Search,
@@ -19,6 +22,8 @@ import {
   Users,
   DollarSign,
   Truck,
+  Filter,
+  RotateCcw,
 } from "lucide-react"
 
 const couriers = [
@@ -132,20 +137,57 @@ const getStatusBadge = (status: string) => {
 export function CouriersSection() {
   const [searchTerm, setSearchTerm] = useState("")
 
-  const filteredCouriers = couriers.filter(
-    (courier) =>
-      courier.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      courier.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      courier.currentLocation.address.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  // Filter states
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [workTimeFrom, setWorkTimeFrom] = useState("")
+  const [workTimeTo, setWorkTimeTo] = useState("")
+  const [ordersRange, setOrdersRange] = useState([0, 250])
+  const [locationFilter, setLocationFilter] = useState("")
 
-  const workingCouriers = couriers.filter((c) => c.status === "working").length
-  const totalBalance = couriers.reduce((sum, c) => sum + c.accountBalance, 0)
-  const todaysTotalDeliveries = couriers.reduce((sum, c) => sum + c.todayDelivered, 0)
+  const filteredCouriers = useMemo(() => {
+    return couriers.filter((courier) => {
+      // Search term filter
+      const matchesSearch =
+        courier.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        courier.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        courier.currentLocation.address.toLowerCase().includes(searchTerm.toLowerCase())
+
+      // Status filter
+      const matchesStatus = statusFilter === "all" || courier.status === statusFilter
+
+      // Work time filter (simplified - checking if schedule contains the time range)
+      const matchesWorkTime =
+        (!workTimeFrom && !workTimeTo) ||
+        courier.workSchedule.toLowerCase().includes("am") ||
+        courier.workSchedule.toLowerCase().includes("pm")
+
+      // Orders count filter
+      const matchesOrders = courier.monthlyOrders >= ordersRange[0] && courier.monthlyOrders <= ordersRange[1]
+
+      // Location filter
+      const matchesLocation =
+        !locationFilter || courier.currentLocation.address.toLowerCase().includes(locationFilter.toLowerCase())
+
+      return matchesSearch && matchesStatus && matchesWorkTime && matchesOrders && matchesLocation
+    })
+  }, [searchTerm, statusFilter, workTimeFrom, workTimeTo, ordersRange, locationFilter])
+
+  const resetFilters = () => {
+    setStatusFilter("all")
+    setWorkTimeFrom("")
+    setWorkTimeTo("")
+    setOrdersRange([0, 250])
+    setLocationFilter("")
+    setSearchTerm("")
+  }
 
   const handleExportExcel = () => {
-    console.log("Exporting couriers data to Excel...")
+    console.log("Exporting filtered couriers data to Excel...")
   }
+
+  const workingCouriers = filteredCouriers.filter((c) => c.status === "working").length
+  const totalBalance = filteredCouriers.reduce((sum, c) => sum + c.accountBalance, 0)
+  const todaysTotalDeliveries = filteredCouriers.reduce((sum, c) => sum + c.todayDelivered, 0)
 
   return (
     <div className="space-y-6">
@@ -154,17 +196,112 @@ export function CouriersSection() {
           <h1 className="text-3xl font-bold tracking-tight">Couriers Management</h1>
           <p className="text-muted-foreground">Monitor courier performance, locations, and delivery statistics</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button onClick={handleExportExcel} variant="outline" className="gap-2 hover:bg-accent bg-transparent">
-            <Download className="h-4 w-4" />
-            Export Excel
-          </Button>
-          <Button className="gap-2 bg-blue-600 hover:bg-blue-700">
-            <Plus className="h-4 w-4" />
-            Add Courier
-          </Button>
-        </div>
       </div>
+
+      {/* Filter Panel */}
+      <Card className="border-l-4 border-l-green-500">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Courier Filters
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            {/* Status Filter */}
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="working">Working</SelectItem>
+                  <SelectItem value="not-working">Not Working</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Work Time Range */}
+            <div className="space-y-2">
+              <Label>Work Time Range</Label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="From (e.g., 9:00 AM)"
+                  value={workTimeFrom}
+                  onChange={(e) => setWorkTimeFrom(e.target.value)}
+                />
+                <Input
+                  placeholder="To (e.g., 6:00 PM)"
+                  value={workTimeTo}
+                  onChange={(e) => setWorkTimeTo(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Orders Count Range */}
+            <div className="space-y-2">
+              <Label>
+                Monthly Orders: {ordersRange[0]} - {ordersRange[1]}
+              </Label>
+              <Slider
+                value={ordersRange}
+                onValueChange={setOrdersRange}
+                max={250}
+                min={0}
+                step={10}
+                className="w-full"
+              />
+            </div>
+
+            {/* Location Filter */}
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Input
+                placeholder="Enter location"
+                value={locationFilter}
+                onChange={(e) => setLocationFilter(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              <Button onClick={resetFilters} variant="outline" className="gap-2 bg-transparent">
+                <RotateCcw className="h-4 w-4" />
+                Reset
+              </Button>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button onClick={handleExportExcel} variant="outline" className="gap-2 hover:bg-accent bg-transparent">
+                <Download className="h-4 w-4" />
+                Export Excel
+              </Button>
+              <Button className="gap-2 bg-blue-600 hover:bg-blue-700">
+                <Plus className="h-4 w-4" />
+                Add Courier
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Search Bar */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search couriers..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-8 focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Summary Cards */}
       <div className="grid gap-6 md:grid-cols-4">
@@ -203,12 +340,12 @@ export function CouriersSection() {
 
         <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-orange-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Performance</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Filtered Results</CardTitle>
             <CheckCircle className="h-5 w-5 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-orange-600">94.2%</div>
-            <p className="text-xs text-muted-foreground mt-1">Delivery success rate</p>
+            <div className="text-3xl font-bold text-orange-600">{filteredCouriers.length}</div>
+            <p className="text-xs text-muted-foreground mt-1">Matching filters</p>
           </CardContent>
         </Card>
       </div>
@@ -219,16 +356,9 @@ export function CouriersSection() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-xl font-semibold">Courier Management</CardTitle>
-              <CardDescription>Track courier status, locations, and performance metrics</CardDescription>
-            </div>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search couriers..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-8 w-[300px] focus:ring-2 focus:ring-blue-500/20"
-              />
+              <CardDescription>
+                Showing {filteredCouriers.length} of {couriers.length} couriers
+              </CardDescription>
             </div>
           </div>
         </CardHeader>

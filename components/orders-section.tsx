@@ -1,12 +1,17 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Download,
   MoreHorizontal,
@@ -20,7 +25,10 @@ import {
   Banknote,
   MapPin,
   User,
+  CalendarIcon,
+  RotateCcw,
 } from "lucide-react"
+import { format } from "date-fns"
 
 const orders = [
   {
@@ -32,6 +40,7 @@ const orders = [
     status: "delivered",
     courierName: "Mike Johnson",
     address: "123 Main St, Manhattan, New York",
+    city: "New York",
     orderCreated: "2024-01-15 09:30:00",
     deliveredTime: "2024-01-15 14:45:00",
   },
@@ -44,6 +53,7 @@ const orders = [
     status: "on-the-way",
     courierName: "Lisa Chen",
     address: "456 Oak Ave, Beverly Hills, Los Angeles",
+    city: "Los Angeles",
     orderCreated: "2024-01-15 11:15:00",
     deliveredTime: null,
   },
@@ -56,6 +66,7 @@ const orders = [
     status: "processing",
     courierName: "Not assigned",
     address: "789 Pine St, Downtown, Chicago",
+    city: "Chicago",
     orderCreated: "2024-01-15 13:20:00",
     deliveredTime: null,
   },
@@ -68,6 +79,7 @@ const orders = [
     status: "cancelled",
     courierName: "N/A",
     address: "321 Elm St, Midtown, Houston",
+    city: "Houston",
     orderCreated: "2024-01-14 16:45:00",
     deliveredTime: null,
   },
@@ -80,6 +92,7 @@ const orders = [
     status: "pending",
     courierName: "Tom Wilson",
     address: "654 Maple Dr, Scottsdale, Phoenix",
+    city: "Phoenix",
     orderCreated: "2024-01-15 08:00:00",
     deliveredTime: null,
   },
@@ -92,9 +105,22 @@ const orders = [
     status: "delivered",
     courierName: "Alex Rodriguez",
     address: "987 Cedar Ln, Center City, Philadelphia",
+    city: "Philadelphia",
     orderCreated: "2024-01-14 10:30:00",
     deliveredTime: "2024-01-14 15:20:00",
   },
+]
+
+const allCouriers = ["Mike Johnson", "Lisa Chen", "Tom Wilson", "Alex Rodriguez", "Not assigned"]
+const allProducts = [
+  "Premium Package",
+  "Standard Package",
+  "Express Package",
+  "Economy Package",
+  "Business Priority",
+  "Insurance Add-on",
+  "Weekend Delivery",
+  "Signature Required",
 ]
 
 const getStatusBadge = (status: string) => {
@@ -165,22 +191,75 @@ const getPaymentBadge = (paymentType: string) => {
 export function OrdersSection() {
   const [searchTerm, setSearchTerm] = useState("")
 
-  const filteredOrders = orders.filter(
-    (order) =>
-      order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.courierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.products.some((product) => product.toLowerCase().includes(searchTerm.toLowerCase())),
-  )
+  // Filter states
+  const [dateFrom, setDateFrom] = useState<Date>()
+  const [dateTo, setDateTo] = useState<Date>()
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [paymentFilter, setPaymentFilter] = useState<string>("all")
+  const [selectedCouriers, setSelectedCouriers] = useState<string[]>([])
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([])
+  const [cityFilter, setCityFilter] = useState("")
 
-  const totalOrders = orders.length
-  const deliveredOrders = orders.filter((o) => o.status === "delivered").length
-  const pendingOrders = orders.filter((o) => o.status === "pending" || o.status === "processing").length
-  const totalRevenue = orders.reduce((sum, o) => sum + o.amount, 0)
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => {
+      // Search term filter
+      const matchesSearch =
+        order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.courierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.products.some((product) => product.toLowerCase().includes(searchTerm.toLowerCase()))
+
+      // Date range filter
+      const orderDate = new Date(order.orderCreated)
+      const matchesDateRange = (!dateFrom || orderDate >= dateFrom) && (!dateTo || orderDate <= dateTo)
+
+      // Status filter
+      const matchesStatus = statusFilter === "all" || order.status === statusFilter
+
+      // Payment filter
+      const matchesPayment = paymentFilter === "all" || order.paymentType === paymentFilter
+
+      // Courier filter
+      const matchesCourier = selectedCouriers.length === 0 || selectedCouriers.includes(order.courierName)
+
+      // Product filter
+      const matchesProduct =
+        selectedProducts.length === 0 || order.products.some((product) => selectedProducts.includes(product))
+
+      // City filter
+      const matchesCity = !cityFilter || order.city.toLowerCase().includes(cityFilter.toLowerCase())
+
+      return (
+        matchesSearch &&
+        matchesDateRange &&
+        matchesStatus &&
+        matchesPayment &&
+        matchesCourier &&
+        matchesProduct &&
+        matchesCity
+      )
+    })
+  }, [searchTerm, dateFrom, dateTo, statusFilter, paymentFilter, selectedCouriers, selectedProducts, cityFilter])
+
+  const resetFilters = () => {
+    setDateFrom(undefined)
+    setDateTo(undefined)
+    setStatusFilter("all")
+    setPaymentFilter("all")
+    setSelectedCouriers([])
+    setSelectedProducts([])
+    setCityFilter("")
+    setSearchTerm("")
+  }
 
   const handleExportExcel = () => {
-    console.log("Exporting orders to Excel...")
+    console.log("Exporting filtered orders to Excel...")
   }
+
+  const totalOrders = filteredOrders.length
+  const deliveredOrders = filteredOrders.filter((o) => o.status === "delivered").length
+  const pendingOrders = filteredOrders.filter((o) => o.status === "pending" || o.status === "processing").length
+  const totalRevenue = filteredOrders.reduce((sum, o) => sum + o.amount, 0)
 
   return (
     <div className="space-y-6">
@@ -189,22 +268,198 @@ export function OrdersSection() {
           <h1 className="text-3xl font-bold tracking-tight">Orders Management</h1>
           <p className="text-muted-foreground">Track and manage all delivery orders with detailed information</p>
         </div>
-        <Button onClick={handleExportExcel} className="gap-2 bg-blue-600 hover:bg-blue-700">
-          <Download className="h-4 w-4" />
-          Export Excel
-        </Button>
       </div>
+
+      {/* Filter Panel */}
+      <Card className="border-l-4 border-l-blue-500">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Order Filters
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            {/* Date Range */}
+            <div className="space-y-2">
+              <Label>Date Range</Label>
+              <div className="flex gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {dateFrom ? format(dateFrom, "MMM dd") : "From"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar mode="single" selected={dateFrom} onSelect={setDateFrom} initialFocus />
+                  </PopoverContent>
+                </Popover>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {dateTo ? format(dateTo, "MMM dd") : "To"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar mode="single" selected={dateTo} onSelect={setDateTo} initialFocus />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+
+            {/* Status Filter */}
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="delivered">Delivered</SelectItem>
+                  <SelectItem value="on-the-way">On the Way</SelectItem>
+                  <SelectItem value="processing">Processing</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Payment Type */}
+            <div className="space-y-2">
+              <Label>Payment Type</Label>
+              <Select value={paymentFilter} onValueChange={setPaymentFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All payments" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All payments</SelectItem>
+                  <SelectItem value="card">Card</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* City Filter */}
+            <div className="space-y-2">
+              <Label>City</Label>
+              <Input placeholder="Enter city name" value={cityFilter} onChange={(e) => setCityFilter(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            {/* Courier Multi-select */}
+            <div className="space-y-2">
+              <Label>Couriers</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start bg-transparent">
+                    {selectedCouriers.length === 0 ? "All couriers" : `${selectedCouriers.length} selected`}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80">
+                  <div className="space-y-2">
+                    {allCouriers.map((courier) => (
+                      <div key={courier} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={courier}
+                          checked={selectedCouriers.includes(courier)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedCouriers([...selectedCouriers, courier])
+                            } else {
+                              setSelectedCouriers(selectedCouriers.filter((c) => c !== courier))
+                            }
+                          }}
+                        />
+                        <Label htmlFor={courier} className="text-sm">
+                          {courier}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Product Multi-select */}
+            <div className="space-y-2">
+              <Label>Products</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start bg-transparent">
+                    {selectedProducts.length === 0 ? "All products" : `${selectedProducts.length} selected`}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80">
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {allProducts.map((product) => (
+                      <div key={product} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={product}
+                          checked={selectedProducts.includes(product)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedProducts([...selectedProducts, product])
+                            } else {
+                              setSelectedProducts(selectedProducts.filter((p) => p !== product))
+                            }
+                          }}
+                        />
+                        <Label htmlFor={product} className="text-sm">
+                          {product}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              <Button onClick={resetFilters} variant="outline" className="gap-2 bg-transparent">
+                <RotateCcw className="h-4 w-4" />
+                Reset
+              </Button>
+            </div>
+            <Button onClick={handleExportExcel} className="gap-2 bg-blue-600 hover:bg-blue-700">
+              <Download className="h-4 w-4" />
+              Export Excel
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Search Bar */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search orders..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-8 focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Summary Cards */}
       <div className="grid gap-6 md:grid-cols-4">
         <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Orders</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Filtered Orders</CardTitle>
             <Package className="h-5 w-5 text-blue-600" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-blue-600">{totalOrders}</div>
-            <p className="text-xs text-muted-foreground mt-1">All time orders</p>
+            <p className="text-xs text-muted-foreground mt-1">Matching filters</p>
           </CardContent>
         </Card>
 
@@ -237,7 +492,7 @@ export function OrdersSection() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-purple-600">${totalRevenue.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground mt-1">From all orders</p>
+            <p className="text-xs text-muted-foreground mt-1">From filtered orders</p>
           </CardContent>
         </Card>
       </div>
@@ -248,21 +503,9 @@ export function OrdersSection() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-xl font-semibold">Order Management</CardTitle>
-              <CardDescription>Comprehensive view of all orders with detailed tracking information</CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search orders..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8 w-[300px] focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <Button variant="outline" size="icon" className="hover:bg-accent bg-transparent">
-                <Filter className="h-4 w-4" />
-              </Button>
+              <CardDescription>
+                Showing {filteredOrders.length} of {orders.length} orders
+              </CardDescription>
             </div>
           </div>
         </CardHeader>

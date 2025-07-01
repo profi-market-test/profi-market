@@ -1,13 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Slider } from "@/components/ui/slider"
 import {
   Download,
   MoreHorizontal,
@@ -19,6 +21,8 @@ import {
   TrendingUp,
   MapPin,
   Phone,
+  Filter,
+  RotateCcw,
 } from "lucide-react"
 
 const clients = [
@@ -146,23 +150,60 @@ const getReturnsBadge = (returns: number, total: number) => {
 export function ClientsSection() {
   const [searchTerm, setSearchTerm] = useState("")
 
-  const filteredClients = clients.filter(
-    (client) =>
-      client.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      client.phone.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      client.address.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      client.address.district.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  // Filter states
+  const [ordersRange, setOrdersRange] = useState([0, 50])
+  const [returnsRange, setReturnsRange] = useState([0, 10])
+  const [cityFilter, setCityFilter] = useState("")
+  const [nameFilter, setNameFilter] = useState("")
 
-  const totalClients = clients.length
-  const vipClients = clients.filter((c) => c.status === "vip").length
-  const totalReturns = clients.reduce((sum, c) => sum + c.returnedOrders, 0)
-  const averageOrderValue =
-    clients.reduce((sum, c) => sum + c.totalSpent, 0) / clients.reduce((sum, c) => sum + c.totalOrders, 0)
+  const filteredClients = useMemo(() => {
+    return clients.filter((client) => {
+      // Search term filter
+      const matchesSearch =
+        client.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        client.phone.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        client.address.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        client.address.district.toLowerCase().includes(searchTerm.toLowerCase())
+
+      // Orders count filter
+      const matchesOrders = client.totalOrders >= ordersRange[0] && client.totalOrders <= ordersRange[1]
+
+      // Returns count filter
+      const matchesReturns = client.returnedOrders >= returnsRange[0] && client.returnedOrders <= returnsRange[1]
+
+      // City filter
+      const matchesCity =
+        !cityFilter ||
+        client.address.city.toLowerCase().includes(cityFilter.toLowerCase()) ||
+        client.address.district.toLowerCase().includes(cityFilter.toLowerCase())
+
+      // Name filter
+      const matchesName = !nameFilter || client.fullName.toLowerCase().includes(nameFilter.toLowerCase())
+
+      return matchesSearch && matchesOrders && matchesReturns && matchesCity && matchesName
+    })
+  }, [searchTerm, ordersRange, returnsRange, cityFilter, nameFilter])
+
+  const resetFilters = () => {
+    setOrdersRange([0, 50])
+    setReturnsRange([0, 10])
+    setCityFilter("")
+    setNameFilter("")
+    setSearchTerm("")
+  }
 
   const handleExportExcel = () => {
-    console.log("Exporting clients data to Excel...")
+    console.log("Exporting filtered clients data to Excel...")
   }
+
+  const totalClients = filteredClients.length
+  const vipClients = filteredClients.filter((c) => c.status === "vip").length
+  const totalReturns = filteredClients.reduce((sum, c) => sum + c.returnedOrders, 0)
+  const averageOrderValue =
+    filteredClients.length > 0
+      ? filteredClients.reduce((sum, c) => sum + c.totalSpent, 0) /
+        filteredClients.reduce((sum, c) => sum + c.totalOrders, 0)
+      : 0
 
   return (
     <div className="space-y-6">
@@ -171,28 +212,105 @@ export function ClientsSection() {
           <h1 className="text-3xl font-bold tracking-tight">Clients Management</h1>
           <p className="text-muted-foreground">Manage customer relationships and track client performance</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button onClick={handleExportExcel} variant="outline" className="gap-2 hover:bg-accent bg-transparent">
-            <Download className="h-4 w-4" />
-            Export Excel
-          </Button>
-          <Button className="gap-2 bg-blue-600 hover:bg-blue-700">
-            <Plus className="h-4 w-4" />
-            Add Client
-          </Button>
-        </div>
       </div>
+
+      {/* Filter Panel */}
+      <Card className="border-l-4 border-l-blue-500">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Client Filters
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            {/* Orders Count Range */}
+            <div className="space-y-2">
+              <Label>
+                Orders Count: {ordersRange[0]} - {ordersRange[1]}
+              </Label>
+              <Slider value={ordersRange} onValueChange={setOrdersRange} max={50} min={0} step={1} className="w-full" />
+            </div>
+
+            {/* Returns Count Range */}
+            <div className="space-y-2">
+              <Label>
+                Returned Orders: {returnsRange[0]} - {returnsRange[1]}
+              </Label>
+              <Slider
+                value={returnsRange}
+                onValueChange={setReturnsRange}
+                max={10}
+                min={0}
+                step={1}
+                className="w-full"
+              />
+            </div>
+
+            {/* City Filter */}
+            <div className="space-y-2">
+              <Label>City</Label>
+              <Input placeholder="Enter city name" value={cityFilter} onChange={(e) => setCityFilter(e.target.value)} />
+            </div>
+
+            {/* Name Filter */}
+            <div className="space-y-2">
+              <Label>Client Name</Label>
+              <Input
+                placeholder="Enter client name"
+                value={nameFilter}
+                onChange={(e) => setNameFilter(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              <Button onClick={resetFilters} variant="outline" className="gap-2 bg-transparent">
+                <RotateCcw className="h-4 w-4" />
+                Reset
+              </Button>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button onClick={handleExportExcel} variant="outline" className="gap-2 hover:bg-accent bg-transparent">
+                <Download className="h-4 w-4" />
+                Export Excel
+              </Button>
+              <Button className="gap-2 bg-blue-600 hover:bg-blue-700">
+                <Plus className="h-4 w-4" />
+                Add Client
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Search Bar */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search clients..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-8 focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Summary Cards */}
       <div className="grid gap-6 md:grid-cols-4">
         <Card className="hover:shadow-lg transition-shadow duration-300 border-l-4 border-l-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Clients</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Filtered Clients</CardTitle>
             <Users className="h-5 w-5 text-blue-600" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-blue-600">{totalClients}</div>
-            <p className="text-xs text-muted-foreground mt-1">Registered customers</p>
+            <p className="text-xs text-muted-foreground mt-1">Matching filters</p>
           </CardContent>
         </Card>
 
@@ -236,16 +354,9 @@ export function ClientsSection() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-xl font-semibold">Client Database</CardTitle>
-              <CardDescription>Comprehensive view of all clients with order history and performance</CardDescription>
-            </div>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search clients..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-8 w-[300px] focus:ring-2 focus:ring-blue-500/20"
-              />
+              <CardDescription>
+                Showing {filteredClients.length} of {clients.length} clients
+              </CardDescription>
             </div>
           </div>
         </CardHeader>
